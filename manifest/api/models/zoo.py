@@ -7,7 +7,7 @@ from manifest.api.models.model import Model
 
 ZOO_PATH = os.environ.get("ZOO_PATH", None)
 if not ZOO_PATH:
-    raise ValueError("ZOO_PATH environment variable not set.")
+    raise ImportError("ZOO_PATH environment variable not set.")
 sys.path.append(ZOO_PATH)
 
 from src.models.s4_seq import S4LMManifest  # type: ignore
