@@ -2,12 +2,13 @@
 import os
 import sys
 from typing import Any, Dict, List, Tuple
+import torch
 
 from manifest.api.models.model import Model
 
 ZOO_PATH = os.environ.get("ZOO_PATH", None)
 if not ZOO_PATH:
-    raise ValueError("ZOO_PATH environment variable not set.")
+    raise ImportError("ZOO_PATH environment variable not set.")
 sys.path.append(ZOO_PATH)
 
 from src.models.s4_seq import S4LMManifest  # type: ignore
@@ -51,6 +52,7 @@ class ZooModel(Model):
             config_path=self.model_config,
             weights_path=self.model_path,
         )
+        self.model.eval()
         # Can only load this after the model has been initialized
         self.model_name = self.model.get_model_name()
 
@@ -91,4 +93,23 @@ class ZooModel(Model):
         Returns:
             the returned gold choice and the score
         """
-        raise NotImplementedError()
+        tokenized_input = torch.tensor(self.model.tokenizer.encode(prompt, truncation=True, max_length=8192)).cuda()
+        tokenized_targets = [
+            torch.tensor(self.model.tokenizer.encode(choice)).cuda()
+            for choice in gold_choices
+        ]
+        preds = []
+        for target in tokenized_targets:
+            logits = torch.log_softmax(self.model.forward(torch.cat([tokenized_input, target]).unsqueeze(0)).logits[0], -1)
+            pred = torch.gather(logits[len(tokenized_input)-1:-1], -1, target.unsqueeze(-1)).sum().item()
+            preds.append(pred)
+            del logits
+
+        prediction = torch.argmax(torch.Tensor(preds))
+
+        del tokenized_input
+        for t in tokenized_targets:
+            del t
+
+        return gold_choices[int(prediction)], preds[int(prediction)]
+
