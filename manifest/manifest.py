@@ -2,6 +2,7 @@
 import logging
 from typing import Any, Iterable, List, Optional, Tuple, Union, cast
 
+import numpy as np
 from tqdm.auto import tqdm
 
 from manifest.caches.noop import NoopCache
@@ -80,9 +81,9 @@ class Manifest:
         self.client_name = client_name
         # Must pass kwargs as dict for client "pop" methods removed used arguments
         self.cache = CACHE_CONSTRUCTORS[cache_name](  # type: ignore
-            cache_connection, cache_args=kwargs
+            cache_connection, self.client_name, cache_args=kwargs
         )
-        self.client = CLIENT_CONSTRUCTORS[client_name](  # type: ignore
+        self.client = CLIENT_CONSTRUCTORS[self.client_name](  # type: ignore
             client_connection, client_args=kwargs
         )
         if session_id is not None:
@@ -107,10 +108,11 @@ class Manifest:
         input: Optional[Any] = None,
         gold_choices: Optional[List[str]] = None,
         overwrite_cache: bool = False,
+        run_id: Optional[str] = None,
         stop_token: Optional[str] = None,
         return_response: bool = False,
         **kwargs: Any,
-    ) -> Union[str, List[str], Response]:
+    ) -> Union[str, List[str], np.ndarray, List[np.ndarray], Response]:
         """
         Run the prompt.
 
@@ -119,9 +121,11 @@ class Manifest:
             input: input to prompt.
             gold_choices: gold choices for max logit response (only HF models).
             overwrite_cache: whether to overwrite cache.
+            run_id: run id to add to cache to allow repeated same runs.
             stop_token: stop token for prompt generation.
                         Default is self.stop_token.
                         "" for no stop token.
+            return_response: whether to return full response object.
 
         Returns:
             response from prompt.
@@ -148,6 +152,9 @@ class Manifest:
         cache_key["client_name"] = self.client_name
         # Make query prompt dependent
         cache_key["prompt"] = prompt_str
+        # Add run id to allow same input runs to be cached
+        if run_id:
+            cache_key["run_id"] = run_id
         response_obj = self.cache.get(cache_key, overwrite_cache, possible_request)
         # Log session dictionary values
         if self.session:
@@ -164,11 +171,12 @@ class Manifest:
         input: Optional[Iterable[Any]] = None,
         gold_choices: Optional[List[str]] = None,
         overwrite_cache: bool = False,
+        run_id: Optional[str] = None,
         stop_token: Optional[str] = None,
         return_response: bool = False,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> Iterable[Union[str, List[str], Response]]:
+    ) -> Iterable[Union[str, List[str], np.ndarray, List[np.ndarray], Response]]:
         """
         Run the prompt on a batch of inputs.
 
@@ -177,9 +185,11 @@ class Manifest:
             input: batch of inputs.
             gold_choices: gold choices for max logit response (only HF models).
             overwrite_cache: whether to overwrite cache.
+            run_id: run id to add to cache to allow repeated same runs.
             stop_token: stop token for prompt generation.
                         Default is self.stop_token.
                         "" for no stop token.
+            return_response: whether to return full response object.
 
         Returns:
             batch of responses.
@@ -197,6 +207,7 @@ class Manifest:
                 inp,
                 gold_choices,
                 overwrite_cache,
+                run_id,
                 stop_token,
                 return_response,
                 **kwargs,
