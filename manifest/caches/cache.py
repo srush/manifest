@@ -1,9 +1,8 @@
 """Cache for queries and responses."""
-import json
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Union
 
-from manifest.manifest.caches.serializers import ArraySerializer, Serializer
+from manifest.caches.serializers import ArraySerializer, Serializer
 from manifest.response import Response
 
 RESPONSE_CONSTRUCTORS = {
@@ -26,7 +25,10 @@ class Cache(ABC):
     """A cache for request/response pairs."""
 
     def __init__(
-        self, connection_str: str, client_name: str, cache_args: Dict[str, Any] = {}
+        self,
+        connection_str: str,
+        client_name: str = "None",
+        cache_args: Dict[str, Any] = {},
     ):
         """
         Initialize client.
@@ -111,8 +113,5 @@ class Cache(ABC):
             self.set_key(key, self.serializer.response_to_key(response))
             cached = False
         return Response(
-            response,
-            cached,
-            request,
-            **RESPONSE_CONSTRUCTORS.get(self.self.client_name, {})
+            response, cached, request, **RESPONSE_CONSTRUCTORS.get(self.client_name, {})
         )

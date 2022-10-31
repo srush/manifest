@@ -10,6 +10,7 @@ from manifest.caches.redis import RedisCache
 from manifest.caches.sqlite import SQLiteCache
 from manifest.clients.ai21 import AI21Client
 from manifest.clients.cohere import CohereClient
+from manifest.clients.diffuser import DiffuserClient
 from manifest.clients.dummy import DummyClient
 from manifest.clients.huggingface import HuggingFaceClient
 from manifest.clients.openai import OpenAIClient
@@ -27,6 +28,7 @@ CLIENT_CONSTRUCTORS = {
     "cohere": CohereClient,
     "ai21": AI21Client,
     "huggingface": HuggingFaceClient,
+    "diffuser": DiffuserClient,
     "opt": OPTClient,
     "dummy": DummyClient,
     "zoo": ZooClient,
@@ -87,6 +89,10 @@ class Manifest:
             client_connection, client_args=kwargs
         )
         if session_id is not None:
+            if self.client_name == "diffuser":
+                raise NotImplementedError(
+                    "Session logging not implemented for Diffuser client."
+                )
             if session_id == "_default":
                 session_id = None
             self.session = Session(session_id)

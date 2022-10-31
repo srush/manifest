@@ -1,12 +1,15 @@
 """Client response."""
 import json
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Union
 
 import numpy as np
 
 
 class NumpyArrayEncoder(json.JSONEncoder):
-    def default(self, obj):
+    """Numpy array encoder."""
+
+    def default(self, obj: Any) -> str:
+        """Encode numpy array."""
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
@@ -52,7 +55,7 @@ class Response:
                 "Response must be serialized to a dict with a list of choices. "
                 f"Response is\n{self._response}."
             )
-        if not self.item_key in self._response[self.generation_key][0]:
+        if self.item_key not in self._response[self.generation_key][0]:
             raise ValueError(
                 "Response must be serialized to a dict with a "
                 f"list of choices with {self.item_key} field"
@@ -108,12 +111,12 @@ class Response:
             return None
         if isinstance(extracted_items[0], str):
             processed_results = list(map(process_result, extracted_items))
-            if len(processed_results) == 1:
-                return processed_results[0]
-            else:
-                return processed_results
         else:
-            return extracted_items
+            processed_results = extracted_items
+        if len(processed_results) == 1:
+            return processed_results[0]
+        else:
+            return processed_results
 
     def serialize(self) -> str:
         """

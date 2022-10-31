@@ -8,6 +8,7 @@ ignore_missing_imports = true
 module = [
   "numpy",
   "tqdm",
+  "diffusers",
   "sqlitedict",
   "dill",
   "tqdm.auto",
