@@ -8,7 +8,7 @@ from typing import Dict
 import pkg_resources
 from flask import Flask, request
 
-from manifest.api.models.huggingface import HuggingFaceModel
+from manifest.api.models.huggingface import TextTransformersModel
 from manifest.api.response import Response
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)  # define app using Flask
 # Will be global
 model = None
-PORT = int(os.environ.get("FLASK_PORT", 5000))
+PORT = int(os.environ.get("FLASK_PORT", 5001))
 MODEL_CONSTRUCTORS = {
-    "huggingface": HuggingFaceModel,
+    "huggingface": TextTransformersModel,
 }
 try:
     from manifest.api.models.zoo import ZooModel
@@ -136,6 +136,23 @@ def main() -> None:
 @app.route("/completions", methods=["POST"])
 def completions() -> Dict:
     """Get completions for generation."""
+    prompt = request.json["prompt"]
+    del request.json["prompt"]
+    generation_args = request.json
+
+    if not isinstance(prompt, str):
+        raise ValueError("Prompt must be a str")
+
+    results_text = []
+    for generations in model.generate(prompt, **generation_args):
+        results_text.append(generations)
+    results = [{"text": r[0], "text_logprob": r[1]} for r in results_text]
+    # transform the result into the openai format
+    return Response(results, response_type="text_completion").__dict__()
+
+@app.route("/embed", methods=["POST"])
+def embed() -> Dict:
+    """Get embed for generation."""
     prompt = request.json["prompt"]
     del request.json["prompt"]
     generation_args = request.json

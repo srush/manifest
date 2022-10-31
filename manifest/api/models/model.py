@@ -57,6 +57,21 @@ class Model(ABC):
         """
         raise NotImplementedError()
 
+    def embed(
+        self, prompt: str, **kwargs: Any
+    ) -> Tuple[str, float]:
+        """
+        Compute embedding for 
+
+        Args:
+            prompt: promt to generate from.
+            gold_choices: list of choices to choose from.
+
+        Returns:
+            the returned gold choice and the score.
+        """
+        raise NotImplementedError()
+
     @abstractmethod
     def logits_scoring(
         self, prompt: str, gold_choices: List[str], **kwargs: Any

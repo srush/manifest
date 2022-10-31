@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union, cast
 
+import PIL
 import torch
 from transformers import (
     AutoModelForCausalLM,
@@ -16,6 +17,8 @@ from transformers import (
     OPTForCausalLM,
     PreTrainedModel,
     PreTrainedTokenizer,
+    CLIPModel,
+    CLIPProcessor,
 )
 
 from manifest.api.models.model import Model
@@ -36,6 +39,7 @@ MODEL_REGISTRY = {
     "facebook/opt-13b": OPTForCausalLM,
     "facebook/opt-30b": OPTForCausalLM,
     "gpt2": GPT2LMHeadModel,
+    "openai/clip-vit-base-patch32": CLIPModel,
     "bigscience/bloom-560m": BloomForCausalLM,
     "bigscience/bloom-1b7": BloomForCausalLM,
     "bigscience/bloom-3b": BloomForCausalLM,
@@ -65,106 +69,7 @@ def get_max_memory(gpu_reduction: float) -> Dict[int, str]:
     return max_mem_dict
 
 
-class Pipeline:
-    """
-    Custom Pipeline.
-
-    HF pipelines do not handle devices well in multi-gpu setting.
-    Create our own generation pipeline.
-    """
-
-    def __init__(
-        self,
-        model: PreTrainedModel,
-        tokenizer: PreTrainedTokenizer,
-        device: int = None,
-        bitsandbytes: bool = False,
-    ):
-        """Initialize."""
-        # Use to turn off sampling
-        # https://github.com/TimDettmers/bitsandbytes/issues/42
-        self.bitsandbytes = bitsandbytes
-        self.model = model
-        config = model.config  # type: ignore
-        # Used for GPT
-        self.max_length = getattr(config, "max_position_embeddings", None)
-        if self.max_length is None:
-            # Used for Bloom
-            self.max_length = getattr(config, "seq_length", None)
-            if self.max_length is None:
-                # Used for T0
-                self.max_length = getattr(config, "d_model", None)
-                if self.max_length is None:
-                    # Default
-                    self.max_length = 2048
-
-        print(f"Usings max_length: {self.max_length}")
-
-        self.tokenizer = tokenizer
-        # self.device = device
-        # With bits and bytes, do not want to place inputs on any device
-        # if self.device:
-        self.device = (
-            torch.device("cpu")
-            if (device == -1 or not torch.cuda.is_available())
-            else torch.device(f"cuda:{device}")
-        )
-        print("HERE", self.device)
-
-    def __call__(
-        self, text: str, **kwargs: Any
-    ) -> List[Dict[str, Union[str, List[float]]]]:
-        """Generate from text.
-
-        Args:
-            text: text to generate.
-
-        Returns:
-            generated text.
-        """
-        # If text is longer than max model length, we reduce max input length to ensure
-        # the user indicated generation tokens is preserved.
-        max_input_length = kwargs.get("max_input_length")
-        encoded_prompt = self.tokenizer(
-            text, max_length=max_input_length, truncation=True, return_tensors="pt"
-        )
-        encoded_prompt = encoded_prompt.to(self.device)
-        output_dict = self.model.generate(  # type: ignore
-            **encoded_prompt,
-            max_length=kwargs.get("max_length"),
-            temperature=kwargs.get("temperature"),
-            top_k=kwargs.get("top_k"),
-            top_p=kwargs.get("top_p"),
-            repetition_penalty=kwargs.get("repetition_penalty"),
-            do_sample=kwargs.get("do_sample") if not self.bitsandbytes else False,
-            eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=self.tokenizer.pad_token_id,
-            num_return_sequences=kwargs.get("num_return_sequences"),
-            output_scores=True,
-            return_dict_in_generate=True,
-        )
-        # logits/scores from the output always correspond to the generated tokens.
-        # shape (num_tokens, num_return_sequences, vocab_size)
-        logits = torch.stack(output_dict.scores)
-        logits = torch.nn.functional.log_softmax(logits, dim=-1)
-        num_generated_tokens = logits.shape[0]
-        generated_sequences = [
-            {
-                "generated_text": self.tokenizer.decode(
-                    output_seq[-num_generated_tokens:], skip_special_tokens=True
-                ),
-                "logprobs": logits[
-                    range(num_generated_tokens), i, output_seq[-num_generated_tokens:]
-                ].tolist(),
-            }
-            for i, output_seq in enumerate(output_dict.sequences)
-        ]
-        return generated_sequences
-
-
 class HuggingFaceModel(Model):
-    """Huggingface model."""
-
     def __init__(
         self,
         model_name_or_path: str,
@@ -260,7 +165,7 @@ class HuggingFaceModel(Model):
                     )
                     print("T", torch_device)
                     model = model.to(torch_device)  # type: ignore
-        self.pipeline = Pipeline(  # type: ignore
+        self.pipeline = GenerationPipeline(  # type: ignore
             model=model,
             tokenizer=tokenizer,
             device=device,
@@ -268,6 +173,188 @@ class HuggingFaceModel(Model):
         )
         # Autogregressive models generate the input, too
         self.returns_input = not self.is_encdec
+
+
+class CrossModalEncoderModel(HuggingFaceModel):
+    def __init__(
+        self,
+        model_name_or_path: str,
+        model_config: str,
+        cache_dir: str,
+        device: int,
+        use_accelerate: bool,
+        use_parallelize: bool,
+        use_bitsandbytes: bool,
+        perc_max_gpu_mem_red: float,
+        use_fp16: bool,
+    ):
+        if use_accelerate and use_parallelize:
+            raise ValueError("Cannot use both accelerate and parallelize")
+        # Check if providing path
+        self.model_path = model_name_or_path
+        if Path(self.model_path).exists() and Path(self.model_path).is_dir():
+            # Try to find config
+            if (Path(self.model_path) / "config.json").exists():
+                config = json.load(open(Path(self.model_path) / "config.json"))
+                model_name_or_path = config["_name_or_path"]
+        self.model_name = model_name_or_path
+
+        # TODO: make this generalizable
+        self.processor = CLIPProcessor.from_pretrained(self.model_path)
+
+        model = MODEL_REGISTRY[self.model_name].from_pretrained(
+            self.model_path,
+            cache_dir=cache_dir,
+        )
+        model.eval()
+
+        torch_device = (
+            torch.device("cpu")
+            if (device == -1 or not torch.cuda.is_available())
+            else torch.device(f"cuda:{device}")
+        )
+        print("T", torch_device)
+        self.model = model.to(torch_device)  # type: ignore
+
+    def embed(self, prompt: Union[str, PIL.Image.Image]):
+        if isinstance(prompt, str):
+            inputs = self.processor(text=prompt, return_tensors="pt", padding=True)
+        elif isinstance(prompt, PIL.Image.Image):
+            inputs = self.processor(images=prompt, return_tensors="pt", padding=True)
+        else:
+            raise ValueError("Prompt must be a string or an image")
+
+        outputs = self.model(**inputs)
+        return outputs
+
+
+class GenerationPipeline:
+    """
+    Custom Pipeline.
+
+    HF pipelines do not handle devices well in multi-gpu setting.
+    Create our own generation pipeline.
+    """
+
+    def __init__(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizer,
+        device: int = None,
+        bitsandbytes: bool = False,
+    ):
+        """Initialize."""
+        # Use to turn off sampling
+        # https://github.com/TimDettmers/bitsandbytes/issues/42
+        self.bitsandbytes = bitsandbytes
+        self.model = model
+        config = model.config  # type: ignore
+        # Used for GPT
+        self.max_length = getattr(config, "max_position_embeddings", None)
+        if self.max_length is None:
+            # Used for Bloom
+            self.max_length = getattr(config, "seq_length", None)
+            if self.max_length is None:
+                # Used for T0
+                self.max_length = getattr(config, "d_model", None)
+                if self.max_length is None:
+                    # Default
+                    self.max_length = 2048
+
+        print(f"Usings max_length: {self.max_length}")
+
+        self.tokenizer = tokenizer
+        # self.device = device
+        # With bits and bytes, do not want to place inputs on any device
+        # if self.device:
+        self.device = (
+            torch.device("cpu")
+            if (device == -1 or not torch.cuda.is_available())
+            else torch.device(f"cuda:{device}")
+        )
+
+    def __call__(
+        self, text: str, **kwargs: Any
+    ) -> List[Dict[str, Union[str, List[float]]]]:
+        """Generate from text.
+
+        Args:
+            text: text to generate.
+
+        Returns:
+            generated text.
+        """
+        # If text is longer than max model length, we reduce max input length to ensure
+        # the user indicated generation tokens is preserved.
+        max_input_length = kwargs.get("max_input_length")
+        encoded_prompt = self.tokenizer(
+            text, max_length=max_input_length, truncation=True, return_tensors="pt"
+        )
+        encoded_prompt = encoded_prompt.to(self.device)
+        output_dict = self.model.generate(  # type: ignore
+            **encoded_prompt,
+            max_length=kwargs.get("max_length"),
+            temperature=kwargs.get("temperature"),
+            top_k=kwargs.get("top_k"),
+            top_p=kwargs.get("top_p"),
+            repetition_penalty=kwargs.get("repetition_penalty"),
+            do_sample=kwargs.get("do_sample") if not self.bitsandbytes else False,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+            num_return_sequences=kwargs.get("num_return_sequences"),
+            output_scores=True,
+            return_dict_in_generate=True,
+        )
+        # logits/scores from the output always correspond to the generated tokens.
+        # shape (num_tokens, num_return_sequences, vocab_size)
+        logits = torch.stack(output_dict.scores)
+        logits = torch.nn.functional.log_softmax(logits, dim=-1)
+        num_generated_tokens = logits.shape[0]
+        generated_sequences = [
+            {
+                "generated_text": self.tokenizer.decode(
+                    output_seq[-num_generated_tokens:], skip_special_tokens=True
+                ),
+                "logprobs": logits[
+                    range(num_generated_tokens), i, output_seq[-num_generated_tokens:]
+                ].tolist(),
+            }
+            for i, output_seq in enumerate(output_dict.sequences)
+        ]
+        return generated_sequences
+
+
+class TextTransformersModel(HuggingFaceModel):
+    """Huggingface model."""
+
+    def __init__(
+        self,
+        model_name_or_path: str,
+        model_config: str,
+        cache_dir: str,
+        device: int,
+        use_accelerate: bool,
+        use_parallelize: bool,
+        use_bitsandbytes: bool,
+        perc_max_gpu_mem_red: float,
+        use_fp16: bool,
+    ):
+        """
+        Initialize model.
+
+        All arguments will be passed in the request from Manifest.
+
+        Args:
+            model_name_or_path: model name string.
+            model_config: model config string.
+            cache_dir: cache directory for model.
+            device: device to use for model.
+            use_accelerate: whether to use accelerate for multi-gpu inference.
+            use_parallelize: use HF default parallelize
+            use_bitsandbytes: use HF bits and bytes
+            perc_max_gpu_mem_red: percent max memory reduction in accelerate
+            use_fp16: use fp16 for model weights.
+        """
 
     def get_init_params(self) -> Dict:
         """Return init params to determine what model is being used."""
