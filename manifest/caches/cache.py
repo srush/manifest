@@ -3,7 +3,7 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Union
 
-from manifest.manifest.caches.serializers import ArraySerializer, Serializer
+from manifest.caches.serializers import ArraySerializer, Serializer
 from manifest.response import Response
 
 RESPONSE_CONSTRUCTORS = {

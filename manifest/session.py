@@ -6,12 +6,6 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from manifest.caches.cache import (
-    key_to_request,
-    key_to_response,
-    request_to_key,
-    response_to_key,
-)
 
 logging.getLogger("sqlitedict").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -109,49 +103,49 @@ class Session:
             return res[0]
         return -1
 
-    def log_query(
-        self, query_key: Dict[str, Any], response_key: Dict[str, Any]
-    ) -> None:
-        """
-        Log the query and response.
+    # def log_query(
+    #     self, query_key: Dict[str, Any], response_key: Dict[str, Any]
+    # ) -> None:
+    #     """
+    #     Log the query and response.
 
-        Args:
-            query_key: query of user (dump of request params).
-            response_key: response of server (dump of response).
-        """
-        query = """INSERT INTO queries VALUES (?, ?, ?, ?);"""
-        self._execute_query(
-            query,
-            self.query_id,
-            self.session_id,
-            request_to_key(query_key),
-            response_to_key(response_key),
-        )
-        self.query_id += 1
-        return
+    #     Args:
+    #         query_key: query of user (dump of request params).
+    #         response_key: response of server (dump of response).
+    #     """
+    #     query = """INSERT INTO queries VALUES (?, ?, ?, ?);"""
+    #     self._execute_query(
+    #         query,
+    #         self.query_id,
+    #         self.session_id,
+    #         request_to_key(query_key),
+    #         response_to_key(response_key),
+    #     )
+    #     self.query_id += 1
+    #     return
 
-    def get_last_queries(
-        self, last_n: int = -1
-    ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
-        """
-        Get last n queries from current session.
+    # def get_last_queries(
+    #     self, last_n: int = -1
+    # ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    #     """
+    #     Get last n queries from current session.
 
-        If last_n is -1, return all queries.
+    #     If last_n is -1, return all queries.
 
-        Args:
-            last_n: last n queries.
+    #     Args:
+    #         last_n: last n queries.
 
-        Returns:
-            last n list of queries and outputs.
-        """
-        first_query = self.query_id - last_n if last_n > 0 else -1
-        query = """SELECT query_key, response_key
-                    FROM queries
-                    WHERE session_id = ? AND query_id >= ?
-                    ORDER BY query_id;"""
-        res = self._execute_query(query, self.session_id, first_query)
-        parsed_res = [
-            (key_to_request(pair[0]), key_to_response(pair[1]))
-            for pair in res.fetchall()
-        ]
-        return parsed_res
+    #     Returns:
+    #         last n list of queries and outputs.
+    #     """
+    #     first_query = self.query_id - last_n if last_n > 0 else -1
+    #     query = """SELECT query_key, response_key
+    #                 FROM queries
+    #                 WHERE session_id = ? AND query_id >= ?
+    #                 ORDER BY query_id;"""
+    #     res = self._execute_query(query, self.session_id, first_query)
+    #     parsed_res = [
+    #         (key_to_request(pair[0]), key_to_response(pair[1]))
+    #         for pair in res.fetchall()
+    #     ]
+    #     return parsed_res

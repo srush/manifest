@@ -220,12 +220,19 @@ class CrossModalEncoderModel(HuggingFaceModel):
         print("T", torch_device)
         self.model = model.to(torch_device)  # type: ignore
 
-    def embed(self, prompt: Union[str, PIL.Image.Image]):
-        if isinstance(prompt, str):
-            inputs = self.processor(text=prompt, return_tensors="pt", padding=True)
+    def embed(
+        self, 
+        prompts: Union[List[str], List[PIL.Image.Image]],
+        modality: str = "auto"
+    ):
+        if modality == "auto":
+            modality = "text" if isinstance(prompts[0], str) else "image"
+
+        if modality == "text":
+            inputs = self.processor(text=prompts, return_tensors="pt", padding=True)
             outputs = self.model.get_text_features(**inputs)
-        elif isinstance(prompt, PIL.Image.Image):
-            inputs = self.processor(images=prompt, return_tensors="pt", padding=True)
+        elif modality == "image":
+            inputs = self.processor(images=prompts, return_tensors="pt", padding=True)
             outputs = self.model.get_image_features(**inputs)
         else:
             raise ValueError("Prompt must be a string or an image")
