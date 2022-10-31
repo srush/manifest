@@ -173,6 +173,10 @@ class HuggingFaceModel(Model):
         )
         # Autogregressive models generate the input, too
         self.returns_input = not self.is_encdec
+    
+    def get_init_params(self) -> Dict:
+        """Return init params to determine what model is being used."""
+        return {"model_name": self.model_name, "model_path": self.model_path}
 
 
 class CrossModalEncoderModel(HuggingFaceModel):
@@ -219,12 +223,13 @@ class CrossModalEncoderModel(HuggingFaceModel):
     def embed(self, prompt: Union[str, PIL.Image.Image]):
         if isinstance(prompt, str):
             inputs = self.processor(text=prompt, return_tensors="pt", padding=True)
+            outputs = self.model.get_text_features(**inputs)
         elif isinstance(prompt, PIL.Image.Image):
             inputs = self.processor(images=prompt, return_tensors="pt", padding=True)
+            outputs = self.model.get_image_features(**inputs)
         else:
             raise ValueError("Prompt must be a string or an image")
 
-        outputs = self.model(**inputs)
         return outputs
 
 
@@ -324,7 +329,7 @@ class GenerationPipeline:
         return generated_sequences
 
 
-class TextTransformersModel(HuggingFaceModel):
+class TextGenerationModel(HuggingFaceModel):
     """Huggingface model."""
 
     def __init__(
@@ -356,9 +361,7 @@ class TextTransformersModel(HuggingFaceModel):
             use_fp16: use fp16 for model weights.
         """
 
-    def get_init_params(self) -> Dict:
-        """Return init params to determine what model is being used."""
-        return {"model_name": self.model_name, "model_path": self.model_path}
+
 
     def _dispatch_accelerate_model(
         self, model: PreTrainedModel, perc_max_gpu_mem_red: float

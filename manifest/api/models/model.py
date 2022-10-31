@@ -42,7 +42,6 @@ class Model(ABC):
         """Return init params to determine what model is being used."""
         raise NotImplementedError()
 
-    @abstractmethod
     def generate(self, prompt: str, **kwargs: Any) -> List[Tuple[str, float]]:
         """
         Generate the prompt from model.
@@ -72,7 +71,6 @@ class Model(ABC):
         """
         raise NotImplementedError()
 
-    @abstractmethod
     def logits_scoring(
         self, prompt: str, gold_choices: List[str], **kwargs: Any
     ) -> Tuple[str, float]:
