@@ -1,5 +1,6 @@
 """Flask app."""
 import argparse
+import io
 import logging
 import os
 import socket
@@ -9,7 +10,7 @@ import pkg_resources
 from flask import Flask, request
 
 from manifest.api.models.diffuser import DiffuserModel
-from manifest.api.models.huggingface import HuggingFaceModel
+from manifest.api.models.huggingface import CrossModalEncoderModel, TextGenerationModel
 from manifest.api.response import Response
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -21,7 +22,8 @@ model = None
 model_type = None
 PORT = int(os.environ.get("FLASK_PORT", 5000))
 MODEL_CONSTRUCTORS = {
-    "huggingface": HuggingFaceModel,
+    "huggingface": TextGenerationModel,
+    "huggingface_crossmodal": CrossModalEncoderModel,
     "diffuser": DiffuserModel,
 }
 try:
@@ -41,7 +43,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         required=True,
         help="Model type used for finding constructor.",
-        choices=["huggingface", "zoo", "diffuser"],
+        choices=MODEL_CONSTRUCTORS.keys(),
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -158,6 +160,34 @@ def completions() -> Dict:
         res_type = "text_completion"
     # transform the result into the openai format
     return Response(results, response_type=res_type).__dict__()
+
+
+@app.route("/embed", methods=["POST"])
+def embed() -> Dict:
+    """Get embed for generation."""
+    modality = request.json["modality"]
+    if modality == "text":
+        prompts = request.json["prompts"]
+    elif modality == "image":
+        import base64
+
+        from PIL import Image
+
+        prompts = [
+            Image.open(io.BytesIO(base64.b64decode(data)))
+            for data in request.json["prompts"]
+        ]
+    else:
+        raise ValueError("modality must be text or image")
+
+    results = []
+    embeddings = model.embed(prompts)
+    for embedding in embeddings:
+        results.append(embedding.tolist())
+
+    # transform the result into the openai format
+    # return Response(results, response_type="text_completion").__dict__()
+    return results
 
 
 @app.route("/choice_logits", methods=["POST"])
