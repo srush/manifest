@@ -1,9 +1,10 @@
 """Hugging Face client."""
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests
 
+import PIL
 from manifest.clients.client import Client
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,21 @@ class HuggingFaceClient(Client):
             return res.json()
 
         return _run_completion, request_params
+
+    def get_embed_request(
+        self, prompts: Union[List[str], List[PIL.Image.Image]], modality: str = "auto"
+    ) -> Tuple[Callable[[], Dict], Dict]:
+
+        request = {
+            "modality": modality,
+            "prompts": prompts,
+        }
+
+        def _run_embed() -> Dict:
+            post_str = self.host + "/embed"
+            res = requests.post(post_str, json=request)
+            return res.json()
+        return _run_embed, request
 
     def get_choice_logit_request(
         self, query: str, gold_choices: List[str], request_args: Dict[str, Any] = {}

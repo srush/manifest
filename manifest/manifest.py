@@ -3,6 +3,7 @@ import logging
 from typing import Any, Iterable, List, Optional, Tuple, Union, cast
 
 import numpy as np
+import PIL 
 from tqdm.auto import tqdm
 
 from manifest.caches.noop import NoopCache
@@ -170,6 +171,36 @@ class Manifest:
             return response_obj
         else:
             return response_obj.get_response(stop_token)
+
+    def embed(
+        self, prompts: Union[List[str], List[PIL.Image.Image]], modality: str = "auto"
+    ):
+        possible_request, full_kwargs = self.client.get_embed_request(
+            prompts=prompts, modality=modality
+        )
+
+        response_obj = possible_request()
+        return response_obj
+
+        # TODO: implement caching 
+        # # Create cacke key
+        # cache_key = full_kwargs.copy()
+        # # Make query model dependent
+        # cache_key["client_name"] = self.client_name
+        # # Make query prompt dependent
+        # cache_key["prompt"] = prompt_str
+        # # Add run id to allow same input runs to be cached
+        # if run_id:
+        #     cache_key["run_id"] = run_id
+        # response_obj = self.cache.get(cache_key, overwrite_cache, possible_request)
+        # # Log session dictionary values
+        # if self.session:
+        #     self.session.log_query(cache_key, response_obj.to_dict())
+        # # Extract text results
+        # if return_response:
+        #     return response_obj
+        # else:
+        #     return response_obj.get_response(stop_token)
 
     def run_batch(
         self,

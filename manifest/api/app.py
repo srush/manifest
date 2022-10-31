@@ -20,7 +20,7 @@ app = Flask(__name__)  # define app using Flask
 # Will be global
 model = None
 model_type = None
-PORT = int(os.environ.get("FLASK_PORT", 5000))
+PORT = int(os.environ.get("FLASK_PORT", 5001))
 MODEL_CONSTRUCTORS = {
     "huggingface": TextGenerationModel,
     "huggingface_crossmodal": CrossModalEncoderModel,
