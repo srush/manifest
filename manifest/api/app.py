@@ -10,6 +10,7 @@ from flask import Flask, request
 
 from manifest.api.models.huggingface import TextGenerationModel, CrossModalEncoderModel
 from manifest.api.response import Response
+from manifest.manifest.api.models.diffuser import DiffuserModel
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -21,6 +22,7 @@ PORT = int(os.environ.get("FLASK_PORT", 5001))
 MODEL_CONSTRUCTORS = {
     "huggingface": TextGenerationModel,
     "huggingface_crossmodal": CrossModalEncoderModel
+    "diffuser": DiffuserModel,
 }
 try:
     from manifest.api.models.zoo import ZooModel
@@ -147,6 +149,7 @@ def completions() -> Dict:
     results_text = []
     for generations in model.generate(prompt, **generation_args):
         results_text.append(generations)
+    # TODO: Support diffusers here
     results = [{"text": r[0], "text_logprob": r[1]} for r in results_text]
     # transform the result into the openai format
     return Response(results, response_type="text_completion").__dict__()
