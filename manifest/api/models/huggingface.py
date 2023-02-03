@@ -32,6 +32,8 @@ MODEL_REGISTRY = {
     "facebook/opt-6.7b": OPTForCausalLM,
     "facebook/opt-13b": OPTForCausalLM,
     "facebook/opt-30b": OPTForCausalLM,
+    "gpt2-xl": GPT2LMHeadModel,
+    "gpt2-medium": GPT2LMHeadModel,
     "gpt2": GPT2LMHeadModel,
     "bigscience/bloom-350m": BloomForCausalLM,
     "bigscience/bloom-1b7": BloomForCausalLM,
@@ -159,9 +161,9 @@ class HuggingFaceModel(Model):
         self.model_name = model_name_or_path
         print("Model Name:", self.model_name, "Model Path:", self.model_path)
         try:
-            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name, truncation_side='left')
         except ValueError:
-            tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False, truncation_side='left')
 
         dtype = torch.float16 if use_fp16 else "auto"
         try:
@@ -311,6 +313,7 @@ class HuggingFaceModel(Model):
             final_results = [r["generated_text"][start_idx:] for r in result]
         return final_results
 
+    @torch.no_grad()
     def logits_scoring(
         self, prompt: str, gold_choices: List[str], **kwargs: Any
     ) -> Tuple[str, float]:
@@ -392,10 +395,10 @@ class HuggingFaceModel(Model):
                     # Make sure to leave room for the outputs
                     features[k].append(
                         tokenized_inputs[k][
-                            : min(
+                            -1 * min(
                                 len(tokenized_inputs[k]),
                                 max_input_len - len(tokenized_targ[k]),
-                            )
+                            ):
                         ]
                         + tokenized_targ[k]
                     )
@@ -431,7 +434,6 @@ class HuggingFaceModel(Model):
         tensor_features = {}
         for k in features:
             tensor_features[k] = torch.LongTensor(features[k]).to(self.pipeline.device)
-
         # Reduce GPU memory by feeding one at a time
         logits = [
             self.pipeline.model(  # type: ignore

@@ -64,6 +64,7 @@ class ZooModel(Model):
             "model_config": self.model_config,
         }
 
+    @torch.no_grad()
     def generate(self, prompt: str, **kwargs: Any) -> List[str]:
         """
         Generate the prompt from model.
@@ -80,6 +81,7 @@ class ZooModel(Model):
         final_results = self.model.generate(prompt, **kwargs)
         return final_results
 
+    @torch.no_grad()
     def logits_scoring(
         self, prompt: str, gold_choices: List[str], **kwargs: Any
     ) -> Tuple[str, float]:

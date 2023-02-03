@@ -92,6 +92,7 @@ def main() -> None:
     model_type = kwargs.model_type
     model_name_or_path = kwargs.model_name_or_path
     model_config = kwargs.model_config
+    print(kwargs)
     if not model_name_or_path and not model_config:
         raise ValueError("Must provide model_name_or_path or model_config.")
     use_accelerate = kwargs.use_accelerate_multigpu
